@@ -1,0 +1,93 @@
+#%%prepare the data
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+holding = pd.read_pickle('SP500_Holdings_20190601_20200701')
+marketprice = pd.read_pickle('SP500_20190601_20200701')
+#%%Q1 Use the price file to calculate weekly returns for all stocks.
+#1. Which stock had the highest average weekly return and which stock had the lowest?
+adj_close = marketprice["2020-01":'2020-06'].xs('Adj Close', level=1, axis=1, drop_level=True) 
+returns = adj_close.pct_change(7)
+returns_long = pd.melt(returns.reset_index(),id_vars=['Date']) 
+returns_long  = returns_long.rename(columns={'variable':'Ticker','value':'weeklyreturns'})
+highest_average_ret_stock = returns_long.groupby('Ticker')['weeklyreturns'].mean().idxmax()
+print(highest_average_ret_stock)
+print(returns_long.groupby('Ticker')['weeklyreturns'].mean().max())
+lowest_average_ret_stock = returns_long.groupby('Ticker')['weeklyreturns'].mean().idxmin(axis = 0)
+print(lowest_average_ret_stock)
+print(returns_long.groupby('Ticker')['weeklyreturns'].mean().min())
+
+#Stock with highest_average_return: ARNC 0.10169980789822253
+print(f"Stock with highest_average_return: {highest_average_ret_stock}")
+#Stock with lowest_average_return: UTX -0.045962048484457285
+print(f"Stock with lowest_average_return: {lowest_average_ret_stock}")
+print("\n")
+
+#2. Which stock had the largest return and when? What about the smallest? 
+print(returns_long.loc[returns_long["weeklyreturns"]==returns_long["weeklyreturns"].max(),:])
+print(returns_long.loc[returns_long["weeklyreturns"]==returns_long["weeklyreturns"].min(),:])
+print("Stock 'APA' had the largest return 1.0845 in 2020-04-13")
+print("Stock 'APA' had the smallest return -0.784541 in 2020-03-17\n")
+#%%Q2 Calculate the weekly percentage change in holdings. Which stock experienced the largest weekly increase in holdings (and when)? what about the smallest?
+holding['date'] = pd.to_datetime(holding['date'])
+holdingwide = holding.pivot(index='date',columns='Ticker',values='users_holding')
+#since if there is zero value in the dataset, the pct_change will have inf
+holdingwide = holdingwide.replace(0,np.nan)  
+holdingwide = holdingwide["2020-01":'2020-06']
+holdingchange = holdingwide.pct_change(7)
+
+holdingchange_long = pd.melt(holdingchange.reset_index(),id_vars=['date']) 
+holdingchange_long  = holdingchange_long.rename(columns={"date":"Date",'variable':'Ticker','value':'usersweeklychange'})
+holdingchange_long.dropna(inplace=True)
+
+print(holdingchange_long.iloc[holdingchange_long["usersweeklychange"].argsort()[-3:]])
+print("IR experienced the largest weekly increase in holdings on both 2020-03-11 with 23.22314\n")
+
+print(holdingchange_long.iloc[holdingchange_long["usersweeklychange"].argsort()[:3]])
+print("TEL experienced the smallest weekly increase in holdings on both 2020-05-23 and 2020-05-24 with -0.252073")
+
+#%%How would you characterize the relation between lagged stock returns and holdings? 
+#This is open ended question so briefly communicate your conclusion and the measure 
+#that you derived the conclusion from.
+#picture a plot to show the trends of lagged stock returns and holdings
+df['returns_lag_1'] = df.groupby(['Ticker'])['weeklyreturns'].shift(1)
+holding=holding.rename(columns={"date":"Date"})
+robinhood_pflio_holdings = pd.DataFrame({'holdings':holding.groupby('Date')['users_holding'].sum()})
+robinhood_pflio_rets = pd.DataFrame({'returns_lag_1':df.groupby('Date')['weeklyreturns'].mean()})
+plot1 = pd.merge(robinhood_pflio_holdings,robinhood_pflio_rets,left_index=True, right_index=True,how="inner")
+plot1.dropna(inplace=True)
+
+#%%
+plt.figure(figsize=(12,5))
+plt.xlabel('Date')
+
+ax1 = plot1["holdings"].plot(color='blue', grid=True, label='holding')
+ax2 = plot1['returns_lag_1'].plot(color='red', grid=True, secondary_y=True, label='returns_lag_1')
+
+ax1.legend(loc=2)
+ax2.legend(loc=1)
+
+plt.show()
+print("According to the plot, it seems that the lagged stock return has no relations to the holdings, the holdings keep growing up regardless stock return change")
+#%%
+print(plot1['returns_lag_1'].corr(plot1["holdings"]))
+#lagged returns are -0.25 correlated with holdings_change 
+print(plt.scatter(plot1['returns_lag_1'], plot1["holdings"]))
+#%%
+#make a regression 
+import seaborn as sns 
+#plot the linear relationship of these two variables
+sns.lmplot(x='returns_lag_1',y='holdings',data=plot1)
+
+#gain the regression results
+import statsmodels.formula.api as smf 
+model1 = smf.ols('holdings~returns_lag_1',data=plot1)
+results1 = model1.fit()
+results1.summary()
+print("The coefficient of the lagged stock returns is 1.449e+07, meaning that a 1% change in lagged stock return is \
+associated with a 1.449e+07 increase in the holdings.While since the R^2 only equals to 11.3%, this model does not predict quite well") 
+
+
+
+
